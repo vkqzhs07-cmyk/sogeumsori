@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>소금 소리탐험대</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <header>
+      <p class="eyebrow">국악 · 소금 음정 연습</p>
+      <h1>소금 소리탐험대</h1>
+      <p class="intro">목표 율명을 고르고, 소금을 길게 불어 보세요. 마이크가 음높이를 듣고 점수를 알려 줍니다.</p>
+    </header>
+
+    <section class="note-picker" aria-label="목표 율명 선택">
+      <p class="section-label">오늘 연습할 율명</p>
+      <div id="noteButtons" class="notes"></div>
+    </section>
+
+    <section class="practice-card">
+      <div class="target-row">
+        <div>
+          <p class="section-label">목표 음</p>
+          <div class="target-note"><span id="targetName">임</span><small id="targetPitch">소금 기준 · 660.0 Hz</small></div>
+        </div>
+        <div><button id="referenceButton" class="ghost" type="button">기준음 듣기</button><button id="calibrateButton" class="ghost" type="button" hidden>내 소리로 기준 맞추기</button></div>
+      </div>
+
+      <div class="meter-wrap" aria-live="polite">
+        <div class="meter-labels"><span>낮아요</span><strong id="meterMessage">시작 버튼을 눌러 주세요</strong><span>높아요</span></div>
+        <div class="meter"><div id="needle" class="needle"></div><div class="center-line"></div></div>
+        <p id="centText" class="cent-text">음정을 기다리고 있어요</p>
+      </div>
+
+      <div class="score-area">
+        <div id="scoreCircle" class="score-circle"><span id="liveScore">—</span><small>점</small></div>
+        <div><strong id="feedback">소금을 준비해요!</strong><p id="detectedText">마이크를 켜면 들리는 음을 보여 드려요.</p></div>
+      </div>
+
+      <div class="actions">
+        <button id="startButton" class="primary" type="button">마이크 켜고 연습 시작</button>
+        <button id="stopButton" class="secondary" type="button" disabled>연습 멈추기</button>
+      </div>
+      <p id="status" class="status">조용한 곳에서 해 보면 더 정확해요.</p>
+      <div id="calibrationPanel" hidden style="margin-top:16px;padding:15px;border-radius:14px;background:#eef8f4;color:#305c55">
+        <strong><span id="calibrationName">임</span>을 기준음으로 저장할까요?</strong>
+        <p style="margin:.35rem 0 .75rem;font-size:.88rem;line-height:1.55">마이크를 켠 뒤 선택한 율명을 약 1초 동안 고르게 부세요. 안정된 소리가 이 율명의 기준음으로 저장됩니다.</p>
+        <button id="captureButton" class="primary" style="padding:10px 13px;font-size:.9rem" type="button">이 음 저장 시작</button>
+        <button id="cancelCalibration" class="text-button" type="button">취소</button>
+        <button id="clearCalibration" class="text-button" type="button">저장한 기준음 모두 지우기</button>
+      </div>
+    </section>
+
+    <section class="result-card">
+      <div><p class="section-label">이번 연습 평균</p><strong id="averageScore">아직 기록이 없어요</strong></div>
+      <div><p class="section-label">성공한 길게 불기</p><strong id="attemptCount">0번</strong></div>
+      <button id="resetButton" class="text-button" type="button">기록 지우기</button>
+    </section>
+
+    <details class="teacher-settings" hidden>
+      <summary>선생님 설정: 기준음 바꾸기</summary>
+      <label>임 기준 주파수 <input id="baseFrequency" type="range" min="500" max="850" value="660" step="1" /> <output id="baseFrequencyOut">660 Hz</output></label>
+      <p>기본값은 소금 기준음 임(660 Hz)입니다. 악기마다 음높이가 다르면 실제 소금 소리에 맞춰 조절하세요. 기준음 듣기 버튼은 소금의 맑고 숨결 섞인 음색으로 들려줍니다.</p>
+    </details>
+
+    <footer>점수는 음정의 가까움을 알려 주는 연습 도우미예요. 좋은 자세와 호흡은 선생님과 함께 살펴보세요.</footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
