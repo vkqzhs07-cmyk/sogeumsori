@@ -3,7 +3,11 @@ const notes = [
   { name: '황', hz: 660 }, { name: '태', hz: 740 }, { name: '고', hz: 828 }, { name: '중', hz: 894 }
 ];
 const highNotes = new Set(['황', '태', '고', '중']);
-let selected = 0, baseHz = 660, audioContext, analyser, stream, raf, samples = [], attemptActive = false, pitchHistory = [], calibrating = false, lastAnalysisAt = 0;
+const SUPABASE_URL = 'https://nghhvpzuqfikniarkgud.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_0Q_m_bHHLAVhucurDTAv8Q_968PtqSR';
+const MIN_RECORD_SECONDS = 2;
+const leaderboardClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+let selected = 0, baseHz = 660, audioContext, analyser, stream, raf, samples = [], attemptActive = false, pitchHistory = [], calibrating = false, lastAnalysisAt = 0, perfectStartedAt = 0, pendingRecordDuration = 0, recordDialogOpen = false, leaderboardEntries = [];
 const $ = id => document.getElementById(id);
 localStorage.removeItem('sogeum-calibration');
 const targetHz = () => notes[selected].hz;
@@ -11,7 +15,7 @@ const hzText = hz => `${hz.toFixed(1)} Hz`;
 
 function drawNotes() {
   $('noteButtons').innerHTML = notes.map((n, i) => `<button class="note-button ${i === selected ? 'selected' : ''}" data-note="${i}" type="button">${n.name}</button>`).join('');
-  document.querySelectorAll('[data-note]').forEach(b => b.onclick = () => { selected = Number(b.dataset.note); updateTarget(); drawNotes(); resetLive(); });
+  document.querySelectorAll('[data-note]').forEach(b => b.onclick = () => { finishPerfectStreak(); selected = Number(b.dataset.note); updateTarget(); drawNotes(); resetLive(); });
 }
 function updateTarget() { const n = notes[selected]; $('targetName').textContent = n.name; $('targetPitch').textContent = `소금 기준 · ${hzText(targetHz())}`; }
 function resetLive() { pitchHistory = []; $('needle').style.left = '50%'; $('liveScore').textContent = '—'; $('meterMessage').textContent = '음정을 기다리고 있어요'; $('centText').textContent = '길게, 고르게 불어 보세요'; $('feedback').textContent = '소금을 준비해요!'; const circle = $('scoreCircle'); if (circle) { circle.style.background = '#f6c74c'; circle.style.color = '#503900'; circle.style.transform = 'scale(1)'; } }
@@ -26,6 +30,52 @@ function scoreFromCents(cents) {
   return Math.max(0, Math.round(76 - (distance - 100) * .5));
 }
 function feedback(cents, score) { if (score >= 92) return '올바른 소리예요!'; if (score >= 76) return '좋아요, 자연스럽게 이어 불어요'; return cents < 0 ? '조금 더 높게 불어요' : '조금 더 낮게 불어요'; }
+function resetPerfectStreak() { perfectStartedAt = 0; const text = $('perfectStreakText'); text.hidden = true; text.textContent = ''; }
+function updatePerfectStreak(score) {
+  if (score !== 100) { finishPerfectStreak(); return; }
+  if (!perfectStartedAt) perfectStartedAt = performance.now();
+  const seconds = (performance.now() - perfectStartedAt) / 1000, text = $('perfectStreakText');
+  text.hidden = false; text.textContent = `100점 유지: ${seconds.toFixed(1)}초`;
+}
+async function finishPerfectStreak() {
+  if (!perfectStartedAt) return;
+  const seconds = (performance.now() - perfectStartedAt) / 1000;
+  resetPerfectStreak();
+  if (seconds < MIN_RECORD_SECONDS || recordDialogOpen) return;
+  await openRecordIfQualified(seconds);
+}
+function escapeHtml(value) { const div = document.createElement('div'); div.textContent = value; return div.innerHTML; }
+function setLeaderboardStatus(message, isError = false) { const status = $('leaderboardConnection'); status.textContent = message; status.classList.toggle('is-error', isError); }
+function renderLeaderboard() {
+  const list = $('leaderboardList');
+  if (!leaderboardEntries.length) { list.innerHTML = '<li class="leaderboard-empty">아직 기록이 없어요. 첫 번째 도전자가 되어 보세요!</li>'; return; }
+  list.innerHTML = leaderboardEntries.map(row => `<li><span class="rank-name">${escapeHtml(row.nickname)}<span class="rank-note">· ${escapeHtml(row.note)}</span></span><span class="rank-time">${Number(row.duration_seconds).toFixed(1)}초</span></li>`).join('');
+}
+async function loadLeaderboard() {
+  if (!leaderboardClient) { setLeaderboardStatus('기록 연결 준비 중', true); return; }
+  const { data, error } = await leaderboardClient.from('leaderboard').select('nickname,note,duration_seconds,created_at').order('duration_seconds', { ascending:false }).order('created_at', { ascending:true }).limit(10);
+  if (error) { setLeaderboardStatus('기록을 불러오지 못했어요', true); $('leaderboardList').innerHTML = '<li class="leaderboard-empty">잠시 후 다시 열어 주세요.</li>'; return; }
+  leaderboardEntries = data || []; renderLeaderboard(); setLeaderboardStatus('우리 반 공용 기록');
+}
+async function openRecordIfQualified(seconds) {
+  if (!leaderboardClient) return;
+  await loadLeaderboard();
+  const last = leaderboardEntries[leaderboardEntries.length - 1];
+  if (leaderboardEntries.length >= 10 && seconds <= Number(last.duration_seconds)) return;
+  pendingRecordDuration = Number(seconds.toFixed(1)); recordDialogOpen = true;
+  $('recordDuration').textContent = `${pendingRecordDuration.toFixed(1)}초`; $('recordFormMessage').textContent = ''; $('nicknameInput').value = '';
+  $('recordDialog').showModal(); setTimeout(() => $('nicknameInput').focus(), 80);
+}
+async function saveRecord(event) {
+  event.preventDefault();
+  const nickname = $('nicknameInput').value.trim().replace(/\s+/g, ' ');
+  if (!/^[가-힣A-Za-z0-9 ]{1,10}$/.test(nickname)) { $('recordFormMessage').textContent = '한글·영문·숫자로 10자 이내로 적어 주세요.'; return; }
+  $('saveRecord').disabled = true; $('recordFormMessage').textContent = '기록을 올리고 있어요…';
+  const { error } = await leaderboardClient.from('leaderboard').insert({ nickname, note: notes[selected].name, duration_seconds: pendingRecordDuration });
+  $('saveRecord').disabled = false;
+  if (error) { $('recordFormMessage').textContent = '기록 저장에 실패했어요. 인터넷 연결을 확인해 주세요.'; return; }
+  $('recordDialog').close(); recordDialogOpen = false; $('status').textContent = '축하해요! 우리 반 Top 10 기록에 올랐어요.'; await loadLeaderboard();
+}
 function updateLive(hz, record = true) {
   const cents = centsFromTarget(hz), score = scoreFromCents(cents), pos = Math.max(3, Math.min(97, 50 + cents / 3));
   $('scoreCircle').classList.toggle('is-correct', score >= 92);
@@ -36,7 +86,7 @@ function updateLive(hz, record = true) {
   circle.style.transform = score >= 92 ? 'scale(1.06)' : 'scale(1)';
   $('needle').style.left = `${pos}%`; $('liveScore').textContent = score; $('meterMessage').textContent = feedback(cents, score); $('centText').textContent = `${cents > 0 ? '+' : ''}${Math.round(cents)} cent · 들린 음 ${hzText(hz)}`; $('feedback').textContent = feedback(cents, score); $('detectedText').textContent = `목표 ${notes[selected].name} ${hzText(targetHz())}`;
   // 노래방처럼 음이 잠시 안정된 경우에만 기록합니다. 세게 불 때의 배음/흔들림은 점수에 넣지 않습니다.
-  if (attemptActive && record) samples.push(score);
+  if (attemptActive && record) { samples.push(score); updatePerfectStreak(score); }
 }
 // 자기상관(autocorrelation) 방식: 브라우저에서 별도 설치 없이 단일 음의 주파수를 추정합니다.
 function autoCorrelate(buffer, sampleRate) {
@@ -85,18 +135,18 @@ function listen() {
         updateLive(stableHz, confirmed);
         if (calibrating && confirmed) finishCalibration(stableHz);
       }
-      else { $('meterMessage').textContent = '소리를 고르게 유지해요'; $('centText').textContent = '음이 안정되면 점수를 보여 드려요'; $('feedback').textContent = '천천히 길게 불어 보세요'; }
+      else { finishPerfectStreak(); $('meterMessage').textContent = '소리를 고르게 유지해요'; $('centText').textContent = '음이 안정되면 점수를 보여 드려요'; $('feedback').textContent = '천천히 길게 불어 보세요'; }
     }
   } else if (energy >= .985) {
-    pitchHistory = []; $('meterMessage').textContent = '소리가 너무 커요'; $('centText').textContent = '입력이 찌그러져 음정을 정확히 들을 수 없어요'; $('feedback').textContent = '조금 부드럽게 불어 보세요';
-  } else { pitchHistory = []; }
+    pitchHistory = []; finishPerfectStreak(); $('meterMessage').textContent = '소리가 너무 커요'; $('centText').textContent = '입력이 찌그러져 음정을 정확히 들을 수 없어요'; $('feedback').textContent = '조금 부드럽게 불어 보세요';
+  } else { pitchHistory = []; finishPerfectStreak(); }
   raf = requestAnimationFrame(listen);
 }
 async function start() {
   if (!navigator.mediaDevices?.getUserMedia) { $('status').textContent = '이 브라우저에서는 마이크 기능을 사용할 수 없어요. Chrome 또는 Edge에서 열어 주세요.'; return; }
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); audioContext = new (window.AudioContext || window.webkitAudioContext)(); if (audioContext.state !== 'running') await audioContext.resume(); analyser = audioContext.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = .15; audioContext.createMediaStreamSource(stream).connect(analyser); $('startButton').disabled = true; $('stopButton').disabled = false; $('status').textContent = '마이크가 켜졌어요. 소리를 1초 이상 고르게 유지하면 안정된 음만 평가해요.'; attemptActive = true; samples = []; resetLive(); listen(); } catch (e) { $('status').textContent = e?.name === 'NotAllowedError' ? '마이크 권한이 차단되었어요. 브라우저와 기기 설정에서 이 사이트의 마이크를 허용해 주세요.' : e?.name === 'NotFoundError' ? '사용할 수 있는 마이크를 찾지 못했어요.' : '마이크를 시작하지 못했어요. 모바일에서는 Safari 또는 Chrome에서 직접 이 페이지를 열어 주세요.'; }
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); audioContext = new (window.AudioContext || window.webkitAudioContext)(); if (audioContext.state !== 'running') await audioContext.resume(); analyser = audioContext.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = .15; audioContext.createMediaStreamSource(stream).connect(analyser); $('startButton').disabled = true; $('stopButton').disabled = false; $('status').textContent = '마이크가 켜졌어요. 소리를 1초 이상 고르게 유지하면 안정된 음만 평가해요.'; attemptActive = true; samples = []; resetPerfectStreak(); resetLive(); listen(); } catch (e) { $('status').textContent = e?.name === 'NotAllowedError' ? '마이크 권한이 차단되었어요. 브라우저와 기기 설정에서 이 사이트의 마이크를 허용해 주세요.' : e?.name === 'NotFoundError' ? '사용할 수 있는 마이크를 찾지 못했어요.' : '마이크를 시작하지 못했어요. 모바일에서는 Safari 또는 Chrome에서 직접 이 페이지를 열어 주세요.'; }
 }
-function stop() { cancelAnimationFrame(raf); stream?.getTracks().forEach(t => t.stop()); audioContext?.close(); attemptActive = false; $('startButton').disabled = false; $('stopButton').disabled = true; if (samples.length) { const avg = Math.round(samples.reduce((a,b)=>a+b,0)/samples.length); $('averageScore').textContent = `${avg}점`; $('attemptCount').textContent = `${Number($('attemptCount').textContent.replace('번','')) + 1}번`; $('status').textContent = `이번 연습은 ${avg}점이에요. ${avg >= 80 ? '훌륭해요!' : '기준음을 들으며 다시 해 볼까요?'}`; } else $('status').textContent = '충분히 들리는 소리가 없었어요. 마이크 가까이에서 다시 해 보세요.'; }
+function stop() { finishPerfectStreak(); cancelAnimationFrame(raf); stream?.getTracks().forEach(t => t.stop()); audioContext?.close(); attemptActive = false; $('startButton').disabled = false; $('stopButton').disabled = true; if (samples.length) { const avg = Math.round(samples.reduce((a,b)=>a+b,0)/samples.length); $('averageScore').textContent = `${avg}점`; $('attemptCount').textContent = `${Number($('attemptCount').textContent.replace('번','')) + 1}번`; $('status').textContent = `이번 연습은 ${avg}점이에요. ${avg >= 80 ? '훌륭해요!' : '기준음을 들으며 다시 해 볼까요?'}`; } else $('status').textContent = '충분히 들리는 소리가 없었어요. 마이크 가까이에서 다시 해 보세요.'; }
 // 소금의 숨결 섞인 맑은 음색을 흉내 낸 기준음입니다. 피아노 음색은 사용하지 않습니다.
 async function playReference() {
   const c = new (window.AudioContext || window.webkitAudioContext)();
@@ -112,10 +162,11 @@ async function playReference() {
   for (let i=0; i<data.length; i++) data[i] = Math.random() * 2 - 1;
   noise.buffer = buffer; noiseFilter.type = 'bandpass'; noiseFilter.frequency.value = 2800; noiseFilter.Q.value = .7; noiseGain.gain.setValueAtTime(.0001,now); noiseGain.gain.exponentialRampToValueAtTime(.009,now+.1); noiseGain.gain.exponentialRampToValueAtTime(.0001,now+duration); noise.connect(noiseFilter).connect(noiseGain).connect(output); noise.start(now); noise.stop(now + duration); setTimeout(() => c.close(), 1700);
 }
-$('startButton').onclick=start; $('stopButton').onclick=stop; $('referenceButton').onclick=playReference; $('baseFrequency').oninput=e=>{baseHz=Number(e.target.value); $('baseFrequencyOut').textContent=`${baseHz} Hz`; updateTarget(); resetLive();}; $('resetButton').onclick=()=>{$('averageScore').textContent='아직 기록이 없어요';$('attemptCount').textContent='0번';};
+$('startButton').onclick=start; $('stopButton').onclick=stop; $('recordForm').onsubmit = saveRecord; $('cancelRecord').onclick = () => { $('recordDialog').close(); recordDialogOpen = false; }; $('referenceButton').onclick=playReference; $('baseFrequency').oninput=e=>{baseHz=Number(e.target.value); $('baseFrequencyOut').textContent=`${baseHz} Hz`; updateTarget(); resetLive();}; $('resetButton').onclick=()=>{$('averageScore').textContent='아직 기록이 없어요';$('attemptCount').textContent='0번';};
 document.querySelector('.meter').style.background = 'linear-gradient(90deg,#f39b66,#f7d865 20%,#55b79a 32%,#55b79a 68%,#f7d865 80%,#f39b66)';
 $('calibrateButton').onclick = () => { $('calibrationName').textContent = notes[selected].name; $('calibrationPanel').hidden = false; };
 $('captureButton').onclick = captureCalibration;
 $('cancelCalibration').onclick = () => { calibrating = false; $('captureButton').disabled = false; $('calibrationPanel').hidden = true; };
 $('clearCalibration').onclick = () => { notes.forEach(n => delete n.hz); localStorage.removeItem('sogeum-calibration'); calibrating = false; $('calibrationPanel').hidden = true; updateTarget(); drawNotes(); resetLive(); $('status').textContent = '저장한 기준음을 모두 지우고 기본 기준으로 돌아갔어요.'; };
-drawNotes(); updateTarget();
+drawNotes(); updateTarget(); loadLeaderboard();
+
