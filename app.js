@@ -7,7 +7,7 @@ const SUPABASE_URL = 'https://nghhvpzuqfikniarkgud.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_0Q_m_bHHLAVhucurDTAv8Q_968PtqSR';
 const MIN_RECORD_SECONDS = 2;
 const SUPABASE_HEADERS = { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}` };
-let selected = 0, baseHz = 660, audioContext, analyser, stream, raf, samples = [], attemptActive = false, pitchHistory = [], calibrating = false, lastAnalysisAt = 0, perfectStartedAt = 0, pendingRecordDuration = 0, recordDialogOpen = false, leaderboardEntries = [];
+let selected = 0, baseHz = 660, audioContext, analyser, stream, raf, samples = [], attemptActive = false, pitchHistory = [], calibrating = false, lastAnalysisAt = 0, perfectStartedAt = 0, pendingRecordDuration = 0, recordDialogOpen = false, leaderboardEntries = [], referenceContext, referenceStopTimer;
 const $ = id => document.getElementById(id);
 localStorage.removeItem('sogeum-calibration');
 const targetHz = () => notes[selected].hz;
@@ -15,7 +15,7 @@ const hzText = hz => `${hz.toFixed(1)} Hz`;
 
 function drawNotes() {
   $('noteButtons').innerHTML = notes.map((n, i) => `<button class="note-button ${i === selected ? 'selected' : ''}" data-note="${i}" type="button">${n.name}</button>`).join('');
-  document.querySelectorAll('[data-note]').forEach(b => b.onclick = () => { finishPerfectStreak(); selected = Number(b.dataset.note); updateTarget(); drawNotes(); resetLive(); });
+  document.querySelectorAll('[data-note]').forEach(b => b.onclick = () => { finishPerfectStreak(); stopReference(); selected = Number(b.dataset.note); updateTarget(); drawNotes(); resetLive(); });
 }
 function updateTarget() { const n = notes[selected]; $('targetName').textContent = n.name; $('targetPitch').textContent = `소금 기준 · ${hzText(targetHz())}`; $('leaderboardTitle').textContent = `${n.name} 길게 불기 Top 10`; $('leaderboardIntro').textContent = `${n.name} 음에서 100점을 유지한 기록만 보여요. 닉네임만 기록해요.`; loadLeaderboard(); }
 function resetLive() { pitchHistory = []; $('needle').style.left = '50%'; $('liveScore').textContent = '—'; $('meterMessage').textContent = '음정을 기다리고 있어요'; $('centText').textContent = '길게, 고르게 불어 보세요'; $('feedback').textContent = '소금을 준비해요!'; const circle = $('scoreCircle'); if (circle) { circle.style.background = '#f6c74c'; circle.style.color = '#503900'; circle.style.transform = 'scale(1)'; } }
@@ -168,10 +168,18 @@ async function start() {
   if (!navigator.mediaDevices?.getUserMedia) { $('status').textContent = '이 브라우저에서는 마이크 기능을 사용할 수 없어요. Chrome 또는 Edge에서 열어 주세요.'; return; }
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); audioContext = new (window.AudioContext || window.webkitAudioContext)(); if (audioContext.state !== 'running') await audioContext.resume(); analyser = audioContext.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = .15; audioContext.createMediaStreamSource(stream).connect(analyser); $('startButton').disabled = true; $('stopButton').disabled = false; $('status').textContent = '마이크가 켜졌어요. 소리를 1초 이상 고르게 유지하면 안정된 음만 평가해요.'; attemptActive = true; samples = []; resetPerfectStreak(); resetLive(); listen(); } catch (e) { $('status').textContent = e?.name === 'NotAllowedError' ? '마이크 권한이 차단되었어요. 브라우저와 기기 설정에서 이 사이트의 마이크를 허용해 주세요.' : e?.name === 'NotFoundError' ? '사용할 수 있는 마이크를 찾지 못했어요.' : '마이크를 시작하지 못했어요. 모바일에서는 Safari 또는 Chrome에서 직접 이 페이지를 열어 주세요.'; }
 }
-function stop() { finishPerfectStreak(); cancelAnimationFrame(raf); stream?.getTracks().forEach(t => t.stop()); audioContext?.close(); attemptActive = false; $('startButton').disabled = false; $('stopButton').disabled = true; $('status').textContent = samples.length ? '연습을 마쳤어요. 100점 유지에 다시 도전해 보세요!' : '충분히 들리는 소리가 없었어요. 마이크 가까이에서 다시 해 보세요.'; }
+function stop() { finishPerfectStreak(); stopReference(); cancelAnimationFrame(raf); stream?.getTracks().forEach(t => t.stop()); audioContext?.close(); attemptActive = false; $('startButton').disabled = false; $('stopButton').disabled = true; $('status').textContent = samples.length ? '연습을 마쳤어요. 100점 유지에 다시 도전해 보세요!' : '충분히 들리는 소리가 없었어요. 마이크 가까이에서 다시 해 보세요.'; }
 // 소금의 숨결 섞인 맑은 음색을 흉내 낸 기준음입니다. 피아노 음색은 사용하지 않습니다.
+function stopReference() {
+  clearTimeout(referenceStopTimer);
+  const context = referenceContext; referenceContext = undefined;
+  if (context && context.state !== 'closed') context.close().catch(() => {});
+  const button = $('referenceStopButton'); if (button) button.disabled = true;
+}
 async function playReference() {
+  stopReference();
   const c = new (window.AudioContext || window.webkitAudioContext)();
+  referenceContext = c; $('referenceStopButton').disabled = false;
   if (c.state !== 'running') await c.resume();
   const now = c.currentTime, duration = 10;
   const output = c.createGain(); output.gain.setValueAtTime(.0001, now); output.gain.exponentialRampToValueAtTime(.18, now + .04); output.gain.setValueAtTime(.18, now + duration); output.connect(c.destination);
@@ -184,9 +192,9 @@ async function playReference() {
   // 아주 약한 바람 소리를 더해 소금의 숨결을 표현합니다.
   const noise = c.createBufferSource(), buffer = c.createBuffer(1, c.sampleRate * duration, c.sampleRate), data = buffer.getChannelData(0), noiseFilter = c.createBiquadFilter(), noiseGain = c.createGain();
   for (let i=0; i<data.length; i++) data[i] = Math.random() * 2 - 1;
-  noise.buffer = buffer; noiseFilter.type = 'bandpass'; noiseFilter.frequency.value = 4600; noiseFilter.Q.value = .75; noiseGain.gain.setValueAtTime(.0001,now); noiseGain.gain.exponentialRampToValueAtTime(.014,now+.06); noiseGain.gain.setValueAtTime(.014,now+duration); noise.connect(noiseFilter).connect(noiseGain).connect(output); noise.start(now); noise.stop(now + duration); setTimeout(() => c.close(), 10400);
+  noise.buffer = buffer; noiseFilter.type = 'bandpass'; noiseFilter.frequency.value = 4600; noiseFilter.Q.value = .75; noiseGain.gain.setValueAtTime(.0001,now); noiseGain.gain.exponentialRampToValueAtTime(.014,now+.06); noiseGain.gain.setValueAtTime(.014,now+duration); noise.connect(noiseFilter).connect(noiseGain).connect(output); noise.start(now); noise.stop(now + duration); referenceStopTimer = setTimeout(() => { if (referenceContext === c) stopReference(); }, 10400);
 }
-$('startButton').onclick=start; $('stopButton').onclick=stop; $('recordForm').onsubmit = saveRecord; $('cancelRecord').onclick = () => { $('recordDialog').close(); recordDialogOpen = false; }; $('referenceButton').onclick=playReference; $('baseFrequency').oninput=e=>{baseHz=Number(e.target.value); $('baseFrequencyOut').textContent=`${baseHz} Hz`; updateTarget(); resetLive();};
+$('startButton').onclick=start; $('stopButton').onclick=stop; $('recordForm').onsubmit = saveRecord; $('cancelRecord').onclick = () => { $('recordDialog').close(); recordDialogOpen = false; }; $('referenceButton').onclick=playReference; $('referenceStopButton').onclick=stopReference; $('baseFrequency').oninput=e=>{baseHz=Number(e.target.value); $('baseFrequencyOut').textContent=`${baseHz} Hz`; updateTarget(); resetLive();};
 document.querySelector('.meter').style.background = 'linear-gradient(90deg,#f39b66,#f7d865 20%,#55b79a 32%,#55b79a 68%,#f7d865 80%,#f39b66)';
 $('calibrateButton').onclick = () => { $('calibrationName').textContent = notes[selected].name; $('calibrationPanel').hidden = false; };
 $('captureButton').onclick = captureCalibration;
