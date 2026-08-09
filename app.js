@@ -2,6 +2,7 @@ const notes = [
   { name: '임', hz: 483 }, { name: '남', hz: 545 }, { name: '무', hz: 590 },
   { name: '황', hz: 660 }, { name: '태', hz: 740 }, { name: '고', hz: 828 }, { name: '중', hz: 894 }
 ];
+const highNotes = new Set(['황', '태', '고', '중']);
 let selected = 0, baseHz = 660, audioContext, analyser, stream, raf, samples = [], attemptActive = false, pitchHistory = [], calibrating = false, lastAnalysisAt = 0;
 const $ = id => document.getElementById(id);
 localStorage.removeItem('sogeum-calibration');
@@ -25,7 +26,7 @@ function scoreFromCents(cents) {
   return Math.max(0, Math.round(76 - (distance - 100) * .5));
 }
 function feedback(cents, score) { if (score >= 92) return '올바른 소리예요!'; if (score >= 76) return '좋아요, 자연스럽게 이어 불어요'; return cents < 0 ? '조금 더 높게 불어요' : '조금 더 낮게 불어요'; }
-function updateLive(hz) {
+function updateLive(hz, record = true) {
   const cents = centsFromTarget(hz), score = scoreFromCents(cents), pos = Math.max(3, Math.min(97, 50 + cents / 3));
   $('scoreCircle').classList.toggle('is-correct', score >= 92);
   $('scoreCircle').classList.toggle('is-close', score >= 76 && score < 92);
@@ -35,13 +36,16 @@ function updateLive(hz) {
   circle.style.transform = score >= 92 ? 'scale(1.06)' : 'scale(1)';
   $('needle').style.left = `${pos}%`; $('liveScore').textContent = score; $('meterMessage').textContent = feedback(cents, score); $('centText').textContent = `${cents > 0 ? '+' : ''}${Math.round(cents)} cent · 들린 음 ${hzText(hz)}`; $('feedback').textContent = feedback(cents, score); $('detectedText').textContent = `목표 ${notes[selected].name} ${hzText(targetHz())}`;
   // 노래방처럼 음이 잠시 안정된 경우에만 기록합니다. 세게 불 때의 배음/흔들림은 점수에 넣지 않습니다.
-  if (attemptActive) samples.push(score);
+  if (attemptActive && record) samples.push(score);
 }
 // 자기상관(autocorrelation) 방식: 브라우저에서 별도 설치 없이 단일 음의 주파수를 추정합니다.
 function autoCorrelate(buffer, sampleRate) {
   let rms = 0; for (let i=0;i<buffer.length;i++) rms += buffer[i]*buffer[i];
   rms = Math.sqrt(rms / buffer.length); if (rms < .003) return -1;
-  const minLag = Math.floor(sampleRate / 1400), maxLag = Math.min(Math.ceil(sampleRate / 100), buffer.length - 2);
+  const expectedHz = targetHz(), ratio = Math.pow(2, 190 / 1200);
+  // 선택한 율명 주변만 탐색해 높은 음의 배음과 바람 소리를 덜 오인합니다.
+  const lowHz = Math.max(100, expectedHz / ratio), highHz = Math.min(1400, expectedHz * ratio);
+  const minLag = Math.floor(sampleRate / highHz), maxLag = Math.min(Math.ceil(sampleRate / lowHz), buffer.length - 2);
   const corr = new Float32Array(maxLag + 1); let best = -Infinity, peak = -1;
   for (let lag=minLag; lag<=maxLag; lag++) { let sum=0; for (let i=0;i<buffer.length-lag;i++) sum += buffer[i]*buffer[i+lag]; corr[lag] = sum / (buffer.length-lag); if (corr[lag] > best) { best=corr[lag]; peak=lag; } }
   if (peak <= minLag || peak >= maxLag) return -1;
@@ -70,10 +74,17 @@ function listen() {
   if (hz > 140 && hz < 1600 && energy >= .003 && energy < .985) {
     // 이전보다 약 10배 긴 시간(약 1초)의 소리를 모아 판단합니다.
     // 순간적인 입김, 떨림, 배음은 화면의 음정과 점수에 거의 반영되지 않습니다.
-    pitchHistory.push(hz); if (pitchHistory.length > 25) pitchHistory.shift();
-    if (pitchHistory.length >= 12) {
+    const isHighNote = highNotes.has(notes[selected].name);
+    const previewCount = isHighNote ? 4 : 6, confirmedCount = isHighNote ? 7 : 12;
+    const historyLimit = isHighNote ? 14 : 25, wobbleLimit = isHighNote ? 65 : 45;
+    pitchHistory.push(hz); if (pitchHistory.length > historyLimit) pitchHistory.shift();
+    if (pitchHistory.length >= previewCount) {
       const stableHz = median(pitchHistory), deviations = pitchHistory.map(v => Math.abs(1200 * Math.log2(v / stableHz))), wobble = median(deviations);
-      if (wobble < 45) { updateLive(stableHz); if (calibrating) finishCalibration(stableHz); }
+      if (wobble < wobbleLimit) {
+        const confirmed = pitchHistory.length >= confirmedCount;
+        updateLive(stableHz, confirmed);
+        if (calibrating && confirmed) finishCalibration(stableHz);
+      }
       else { $('meterMessage').textContent = '소리를 고르게 유지해요'; $('centText').textContent = '음이 안정되면 점수를 보여 드려요'; $('feedback').textContent = '천천히 길게 불어 보세요'; }
     }
   } else if (energy >= .985) {
