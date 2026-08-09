@@ -173,18 +173,18 @@ function stop() { finishPerfectStreak(); cancelAnimationFrame(raf); stream?.getT
 async function playReference() {
   const c = new (window.AudioContext || window.webkitAudioContext)();
   if (c.state !== 'running') await c.resume();
-  const now = c.currentTime, duration = 6;
-  const output = c.createGain(); output.gain.setValueAtTime(.0001, now); output.gain.exponentialRampToValueAtTime(.18, now + .08); output.gain.setValueAtTime(.18, now + duration - .22); output.gain.exponentialRampToValueAtTime(.0001, now + duration); output.connect(c.destination);
+  const now = c.currentTime, duration = 10;
+  const output = c.createGain(); output.gain.setValueAtTime(.0001, now); output.gain.exponentialRampToValueAtTime(.18, now + .04); output.gain.setValueAtTime(.18, now + duration); output.connect(c.destination);
   // 부드러운 기본음과 약한 홀수 배음으로 관악기의 열린 소리를 만듭니다.
   const vibrato = c.createOscillator(), vibratoDepth = c.createGain();
   vibrato.frequency.setValueAtTime(4.4, now); vibratoDepth.gain.setValueAtTime(0, now); vibratoDepth.gain.linearRampToValueAtTime(4.2, now + .35); vibrato.connect(vibratoDepth); vibrato.start(now); vibrato.stop(now + duration);
-  [[1,.88],[2,.055],[3,.075],[4,.025],[5,.035],[6,.016]].forEach(([multiple, level]) => {
+  [[1,.84],[2,.08],[3,.11],[4,.055],[5,.07],[6,.045],[7,.03]].forEach(([multiple, level]) => {
     const osc = c.createOscillator(), gain = c.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(targetHz() * multiple, now); osc.detune.setValueAtTime((multiple - 1) * .7, now); vibratoDepth.connect(osc.detune); gain.gain.value = level; osc.connect(gain).connect(output); osc.start(now); osc.stop(now + duration);
   });
   // 아주 약한 바람 소리를 더해 소금의 숨결을 표현합니다.
   const noise = c.createBufferSource(), buffer = c.createBuffer(1, c.sampleRate * duration, c.sampleRate), data = buffer.getChannelData(0), noiseFilter = c.createBiquadFilter(), noiseGain = c.createGain();
   for (let i=0; i<data.length; i++) data[i] = Math.random() * 2 - 1;
-  noise.buffer = buffer; noiseFilter.type = 'bandpass'; noiseFilter.frequency.value = 3600; noiseFilter.Q.value = .55; noiseGain.gain.setValueAtTime(.0001,now); noiseGain.gain.exponentialRampToValueAtTime(.012,now+.1); noiseGain.gain.setValueAtTime(.012,now+duration-.22); noiseGain.gain.exponentialRampToValueAtTime(.0001,now+duration); noise.connect(noiseFilter).connect(noiseGain).connect(output); noise.start(now); noise.stop(now + duration); setTimeout(() => c.close(), 6400);
+  noise.buffer = buffer; noiseFilter.type = 'bandpass'; noiseFilter.frequency.value = 4600; noiseFilter.Q.value = .75; noiseGain.gain.setValueAtTime(.0001,now); noiseGain.gain.exponentialRampToValueAtTime(.014,now+.06); noiseGain.gain.setValueAtTime(.014,now+duration); noise.connect(noiseFilter).connect(noiseGain).connect(output); noise.start(now); noise.stop(now + duration); setTimeout(() => c.close(), 10400);
 }
 $('startButton').onclick=start; $('stopButton').onclick=stop; $('recordForm').onsubmit = saveRecord; $('cancelRecord').onclick = () => { $('recordDialog').close(); recordDialogOpen = false; }; $('referenceButton').onclick=playReference; $('baseFrequency').oninput=e=>{baseHz=Number(e.target.value); $('baseFrequencyOut').textContent=`${baseHz} Hz`; updateTarget(); resetLive();};
 document.querySelector('.meter').style.background = 'linear-gradient(90deg,#f39b66,#f7d865 20%,#55b79a 32%,#55b79a 68%,#f7d865 80%,#f39b66)';
