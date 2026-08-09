@@ -58,8 +58,17 @@ function renderLeaderboard() {
 }
 async function loadLeaderboard() {
   const note = notes[selected].name;
+  leaderboardEntries = [];
+  $('leaderboardList').innerHTML = '<li class="leaderboard-empty">기록을 불러오는 중이에요.</li>';
+  setLeaderboardStatus(`${note} 기록 불러오는 중…`);
   try {
-    const response = await leaderboardRequest(`leaderboard?select=nickname,note,duration_seconds,created_at&note=eq.${encodeURIComponent(note)}&order=duration_seconds.desc,created_at.asc&limit=10`, { headers: SUPABASE_HEADERS });
+    const query = new URLSearchParams({
+      select: 'nickname,note,duration_seconds,created_at',
+      note: `eq.${note}`,
+      order: 'duration_seconds.desc,created_at.asc',
+      limit: '10'
+    });
+    const response = await leaderboardRequest(`leaderboard?${query}`, { headers: SUPABASE_HEADERS });
     if (!response.ok) throw new Error('leaderboard request failed');
     const data = await response.json(); if (note !== notes[selected].name) return;
     leaderboardEntries = data; renderLeaderboard(); setLeaderboardStatus(`${note} 공용 기록`);
