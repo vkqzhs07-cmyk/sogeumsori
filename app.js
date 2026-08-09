@@ -17,7 +17,7 @@ function drawNotes() {
   $('noteButtons').innerHTML = notes.map((n, i) => `<button class="note-button ${i === selected ? 'selected' : ''}" data-note="${i}" type="button">${n.name}</button>`).join('');
   document.querySelectorAll('[data-note]').forEach(b => b.onclick = () => { finishPerfectStreak(); selected = Number(b.dataset.note); updateTarget(); drawNotes(); resetLive(); });
 }
-function updateTarget() { const n = notes[selected]; $('targetName').textContent = n.name; $('targetPitch').textContent = `소금 기준 · ${hzText(targetHz())}`; }
+function updateTarget() { const n = notes[selected]; $('targetName').textContent = n.name; $('targetPitch').textContent = `소금 기준 · ${hzText(targetHz())}`; $('leaderboardTitle').textContent = `${n.name} 길게 불기 Top 10`; $('leaderboardIntro').textContent = `${n.name} 음에서 100점을 유지한 기록만 보여요. 닉네임만 기록해요.`; loadLeaderboard(); }
 function resetLive() { pitchHistory = []; $('needle').style.left = '50%'; $('liveScore').textContent = '—'; $('meterMessage').textContent = '음정을 기다리고 있어요'; $('centText').textContent = '길게, 고르게 불어 보세요'; $('feedback').textContent = '소금을 준비해요!'; const circle = $('scoreCircle'); if (circle) { circle.style.background = '#f6c74c'; circle.style.color = '#503900'; circle.style.transform = 'scale(1)'; } }
 function centsFromTarget(hz) { return 1200 * Math.log2(hz / targetHz()); }
 // 국악기의 자연스러운 시김새와 음정 폭을 고려한 넉넉한 판정입니다.
@@ -54,13 +54,15 @@ async function leaderboardRequest(path, options = {}) {
 function renderLeaderboard() {
   const list = $('leaderboardList');
   if (!leaderboardEntries.length) { list.innerHTML = '<li class="leaderboard-empty">아직 기록이 없어요. 첫 번째 도전자가 되어 보세요!</li>'; return; }
-  list.innerHTML = leaderboardEntries.map(row => `<li><span class="rank-name">${escapeHtml(row.nickname)}<span class="rank-note">· ${escapeHtml(row.note)}</span></span><span class="rank-time">${Number(row.duration_seconds).toFixed(1)}초</span></li>`).join('');
+  list.innerHTML = leaderboardEntries.map(row => `<li><span class="rank-name">${escapeHtml(row.nickname)}</span><span class="rank-time">${Number(row.duration_seconds).toFixed(1)}초</span></li>`).join('');
 }
 async function loadLeaderboard() {
+  const note = notes[selected].name;
   try {
-    const response = await leaderboardRequest('leaderboard?select=nickname,note,duration_seconds,created_at&order=duration_seconds.desc,created_at.asc&limit=10', { headers: SUPABASE_HEADERS });
+    const response = await leaderboardRequest(`leaderboard?select=nickname,note,duration_seconds,created_at&note=eq.${encodeURIComponent(note)}&order=duration_seconds.desc,created_at.asc&limit=10`, { headers: SUPABASE_HEADERS });
     if (!response.ok) throw new Error('leaderboard request failed');
-    leaderboardEntries = await response.json(); renderLeaderboard(); setLeaderboardStatus('우리 반 공용 기록');
+    const data = await response.json(); if (note !== notes[selected].name) return;
+    leaderboardEntries = data; renderLeaderboard(); setLeaderboardStatus(`${note} 공용 기록`);
   } catch {
     setLeaderboardStatus('기록을 불러오지 못했어요', true); $('leaderboardList').innerHTML = '<li class="leaderboard-empty">잠시 후 다시 열어 주세요.</li>';
   }
@@ -179,4 +181,4 @@ $('calibrateButton').onclick = () => { $('calibrationName').textContent = notes[
 $('captureButton').onclick = captureCalibration;
 $('cancelCalibration').onclick = () => { calibrating = false; $('captureButton').disabled = false; $('calibrationPanel').hidden = true; };
 $('clearCalibration').onclick = () => { notes.forEach(n => delete n.hz); localStorage.removeItem('sogeum-calibration'); calibrating = false; $('calibrationPanel').hidden = true; updateTarget(); drawNotes(); resetLive(); $('status').textContent = '저장한 기준음을 모두 지우고 기본 기준으로 돌아갔어요.'; };
-drawNotes(); updateTarget(); loadLeaderboard();
+drawNotes(); updateTarget();
