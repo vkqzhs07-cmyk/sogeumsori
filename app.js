@@ -46,6 +46,11 @@ async function finishPerfectStreak() {
 }
 function escapeHtml(value) { const div = document.createElement('div'); div.textContent = value; return div.innerHTML; }
 function setLeaderboardStatus(message, isError = false) { const status = $('leaderboardConnection'); status.textContent = message; status.classList.toggle('is-error', isError); }
+async function leaderboardRequest(path, options = {}) {
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 8000);
+  try { return await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...options, signal:controller.signal }); }
+  finally { clearTimeout(timer); }
+}
 function renderLeaderboard() {
   const list = $('leaderboardList');
   if (!leaderboardEntries.length) { list.innerHTML = '<li class="leaderboard-empty">아직 기록이 없어요. 첫 번째 도전자가 되어 보세요!</li>'; return; }
@@ -53,7 +58,7 @@ function renderLeaderboard() {
 }
 async function loadLeaderboard() {
   try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?select=nickname,note,duration_seconds,created_at&order=duration_seconds.desc,created_at.asc&limit=10`, { headers: SUPABASE_HEADERS });
+    const response = await leaderboardRequest('leaderboard?select=nickname,note,duration_seconds,created_at&order=duration_seconds.desc,created_at.asc&limit=10', { headers: SUPABASE_HEADERS });
     if (!response.ok) throw new Error('leaderboard request failed');
     leaderboardEntries = await response.json(); renderLeaderboard(); setLeaderboardStatus('우리 반 공용 기록');
   } catch {
@@ -75,7 +80,7 @@ async function saveRecord(event) {
   $('saveRecord').disabled = true; $('recordFormMessage').textContent = '기록을 올리고 있어요…';
   let error;
   try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard`, { method:'POST', headers:{ ...SUPABASE_HEADERS, 'Content-Type':'application/json', Prefer:'return=minimal' }, body:JSON.stringify({ nickname, note: notes[selected].name, duration_seconds: pendingRecordDuration }) });
+    const response = await leaderboardRequest('leaderboard', { method:'POST', headers:{ ...SUPABASE_HEADERS, 'Content-Type':'application/json', Prefer:'return=minimal' }, body:JSON.stringify({ nickname, note: notes[selected].name, duration_seconds: pendingRecordDuration }) });
     if (!response.ok) throw new Error('record insert failed');
   } catch { error = true; }
   $('saveRecord').disabled = false;
