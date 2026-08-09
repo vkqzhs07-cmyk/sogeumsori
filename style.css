@@ -24,6 +24,7 @@
 .record-dialog label { display:grid; gap:7px; margin-top:18px; font-weight:800; color:#355c53; }
 .record-dialog input { padding:12px; border:2px solid #d4e7df; border-radius:10px; font:inherit; }
 .record-dialog input:focus { outline:3px solid #bce9d9; border-color:#168b77; }
+.reference-actions { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; }
 .form-message { min-height:1.2em; margin:.65rem 0 0; color:#bd4c34; font-size:.85rem; }
 .dialog-actions { display:flex; justify-content:flex-end; gap:9px; margin-top:17px; }
 @media (max-width:520px) { .leaderboard-card { padding:19px; } .leaderboard-heading { display:block; } .leaderboard-status { display:inline-block; margin-top:9px; } .dialog-actions { flex-direction:column-reverse; } .dialog-actions button { width:100%; } }
