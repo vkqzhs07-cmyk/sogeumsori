@@ -6,7 +6,7 @@ const highNotes = new Set(['황', '태', '고', '중']);
 const SUPABASE_URL = 'https://nghhvpzuqfikniarkgud.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_0Q_m_bHHLAVhucurDTAv8Q_968PtqSR';
 const MIN_RECORD_SECONDS = 2;
-const leaderboardClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+const SUPABASE_HEADERS = { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}` };
 let selected = 0, baseHz = 660, audioContext, analyser, stream, raf, samples = [], attemptActive = false, pitchHistory = [], calibrating = false, lastAnalysisAt = 0, perfectStartedAt = 0, pendingRecordDuration = 0, recordDialogOpen = false, leaderboardEntries = [];
 const $ = id => document.getElementById(id);
 localStorage.removeItem('sogeum-calibration');
@@ -52,13 +52,15 @@ function renderLeaderboard() {
   list.innerHTML = leaderboardEntries.map(row => `<li><span class="rank-name">${escapeHtml(row.nickname)}<span class="rank-note">· ${escapeHtml(row.note)}</span></span><span class="rank-time">${Number(row.duration_seconds).toFixed(1)}초</span></li>`).join('');
 }
 async function loadLeaderboard() {
-  if (!leaderboardClient) { setLeaderboardStatus('기록 연결 준비 중', true); return; }
-  const { data, error } = await leaderboardClient.from('leaderboard').select('nickname,note,duration_seconds,created_at').order('duration_seconds', { ascending:false }).order('created_at', { ascending:true }).limit(10);
-  if (error) { setLeaderboardStatus('기록을 불러오지 못했어요', true); $('leaderboardList').innerHTML = '<li class="leaderboard-empty">잠시 후 다시 열어 주세요.</li>'; return; }
-  leaderboardEntries = data || []; renderLeaderboard(); setLeaderboardStatus('우리 반 공용 기록');
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?select=nickname,note,duration_seconds,created_at&order=duration_seconds.desc,created_at.asc&limit=10`, { headers: SUPABASE_HEADERS });
+    if (!response.ok) throw new Error('leaderboard request failed');
+    leaderboardEntries = await response.json(); renderLeaderboard(); setLeaderboardStatus('우리 반 공용 기록');
+  } catch {
+    setLeaderboardStatus('기록을 불러오지 못했어요', true); $('leaderboardList').innerHTML = '<li class="leaderboard-empty">잠시 후 다시 열어 주세요.</li>';
+  }
 }
 async function openRecordIfQualified(seconds) {
-  if (!leaderboardClient) return;
   await loadLeaderboard();
   const last = leaderboardEntries[leaderboardEntries.length - 1];
   if (leaderboardEntries.length >= 10 && seconds <= Number(last.duration_seconds)) return;
@@ -71,7 +73,11 @@ async function saveRecord(event) {
   const nickname = $('nicknameInput').value.trim().replace(/\s+/g, ' ');
   if (!/^[가-힣A-Za-z0-9 ]{1,10}$/.test(nickname)) { $('recordFormMessage').textContent = '한글·영문·숫자로 10자 이내로 적어 주세요.'; return; }
   $('saveRecord').disabled = true; $('recordFormMessage').textContent = '기록을 올리고 있어요…';
-  const { error } = await leaderboardClient.from('leaderboard').insert({ nickname, note: notes[selected].name, duration_seconds: pendingRecordDuration });
+  let error;
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard`, { method:'POST', headers:{ ...SUPABASE_HEADERS, 'Content-Type':'application/json', Prefer:'return=minimal' }, body:JSON.stringify({ nickname, note: notes[selected].name, duration_seconds: pendingRecordDuration }) });
+    if (!response.ok) throw new Error('record insert failed');
+  } catch { error = true; }
   $('saveRecord').disabled = false;
   if (error) { $('recordFormMessage').textContent = '기록 저장에 실패했어요. 인터넷 연결을 확인해 주세요.'; return; }
   $('recordDialog').close(); recordDialogOpen = false; $('status').textContent = '축하해요! 우리 반 Top 10 기록에 올랐어요.'; await loadLeaderboard();
@@ -169,4 +175,3 @@ $('captureButton').onclick = captureCalibration;
 $('cancelCalibration').onclick = () => { calibrating = false; $('captureButton').disabled = false; $('calibrationPanel').hidden = true; };
 $('clearCalibration').onclick = () => { notes.forEach(n => delete n.hz); localStorage.removeItem('sogeum-calibration'); calibrating = false; $('calibrationPanel').hidden = true; updateTarget(); drawNotes(); resetLive(); $('status').textContent = '저장한 기준음을 모두 지우고 기본 기준으로 돌아갔어요.'; };
 drawNotes(); updateTarget(); loadLeaderboard();
-
