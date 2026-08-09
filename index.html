@@ -36,7 +36,7 @@
 
       <div class="score-area">
         <div id="scoreCircle" class="score-circle"><span id="liveScore">—</span><small>점</small></div>
-        <div><strong id="feedback">소금을 준비해요!</strong><p id="detectedText">마이크를 켜면 들리는 음을 보여 드려요.</p></div>
+        <div><strong id="feedback">소금을 준비해요!</strong><p id="detectedText">마이크를 켜면 들리는 음을 보여 드려요.</p><p id="perfectStreakText" class="streak-text" hidden></p></div>
       </div>
 
       <div class="actions">
@@ -59,6 +59,28 @@
       <button id="resetButton" class="text-button" type="button">기록 지우기</button>
     </section>
 
+    <section class="leaderboard-card" aria-labelledby="leaderboardTitle">
+      <div class="leaderboard-heading">
+        <div><p class="section-label">우리 반 도전 기록</p><h2 id="leaderboardTitle">100점 길게 불기 Top 10</h2></div>
+        <span id="leaderboardConnection" class="leaderboard-status">기록 불러오는 중…</span>
+      </div>
+      <p class="leaderboard-intro">100점을 고르게 유지한 시간이 길수록 위에 올라가요. 닉네임만 기록해요.</p>
+      <ol id="leaderboardList" class="leaderboard-list" aria-live="polite"><li class="leaderboard-empty">기록을 불러오는 중이에요.</li></ol>
+    </section>
+
+    <dialog id="recordDialog" class="record-dialog">
+      <form id="recordForm" method="dialog">
+        <p class="section-label">새 기록!</p>
+        <h2>Top 10에 올랐어요</h2>
+        <p><strong id="recordDuration">0.0초</strong> 동안 100점을 유지했어요.</p>
+        <label for="nicknameInput">닉네임 (10자 이내)
+          <input id="nicknameInput" name="nickname" maxlength="10" pattern="[가-힣A-Za-z0-9 ]+" required autocomplete="off" placeholder="예: 소금왕">
+        </label>
+        <p id="recordFormMessage" class="form-message" aria-live="polite"></p>
+        <div class="dialog-actions"><button id="cancelRecord" class="secondary" type="button">이번엔 기록 안 하기</button><button id="saveRecord" class="primary" type="submit">기록 올리기</button></div>
+      </form>
+    </dialog>
+
     <details class="teacher-settings" hidden>
       <summary>선생님 설정: 기준음 바꾸기</summary>
       <label>임 기준 주파수 <input id="baseFrequency" type="range" min="500" max="850" value="660" step="1" /> <output id="baseFrequencyOut">660 Hz</output></label>
@@ -67,6 +89,7 @@
 
     <footer>점수는 음정의 가까움을 알려 주는 연습 도우미예요. 좋은 자세와 호흡은 선생님과 함께 살펴보세요.</footer>
   </main>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
 </body>
 </html>
