@@ -173,7 +173,7 @@ function stop() { finishPerfectStreak(); cancelAnimationFrame(raf); stream?.getT
 async function playReference() {
   const c = new (window.AudioContext || window.webkitAudioContext)();
   if (c.state !== 'running') await c.resume();
-  const now = c.currentTime, duration = 1.35;
+  const now = c.currentTime, duration = 2.15;
   const output = c.createGain(); output.gain.setValueAtTime(.0001, now); output.gain.exponentialRampToValueAtTime(.22, now + .08); output.gain.exponentialRampToValueAtTime(.13, now + .28); output.gain.exponentialRampToValueAtTime(.0001, now + duration); output.connect(c.destination);
   // 부드러운 기본음과 약한 홀수 배음으로 관악기의 열린 소리를 만듭니다.
   [[1,.82],[2,.12],[3,.18],[4,.045],[5,.075]].forEach(([multiple, level]) => {
@@ -182,7 +182,7 @@ async function playReference() {
   // 아주 약한 바람 소리를 더해 소금의 숨결을 표현합니다.
   const noise = c.createBufferSource(), buffer = c.createBuffer(1, c.sampleRate * duration, c.sampleRate), data = buffer.getChannelData(0), noiseFilter = c.createBiquadFilter(), noiseGain = c.createGain();
   for (let i=0; i<data.length; i++) data[i] = Math.random() * 2 - 1;
-  noise.buffer = buffer; noiseFilter.type = 'bandpass'; noiseFilter.frequency.value = 2800; noiseFilter.Q.value = .7; noiseGain.gain.setValueAtTime(.0001,now); noiseGain.gain.exponentialRampToValueAtTime(.009,now+.1); noiseGain.gain.exponentialRampToValueAtTime(.0001,now+duration); noise.connect(noiseFilter).connect(noiseGain).connect(output); noise.start(now); noise.stop(now + duration); setTimeout(() => c.close(), 1700);
+  noise.buffer = buffer; noiseFilter.type = 'bandpass'; noiseFilter.frequency.value = 2800; noiseFilter.Q.value = .7; noiseGain.gain.setValueAtTime(.0001,now); noiseGain.gain.exponentialRampToValueAtTime(.009,now+.1); noiseGain.gain.exponentialRampToValueAtTime(.0001,now+duration); noise.connect(noiseFilter).connect(noiseGain).connect(output); noise.start(now); noise.stop(now + duration); setTimeout(() => c.close(), 2500);
 }
 $('startButton').onclick=start; $('stopButton').onclick=stop; $('recordForm').onsubmit = saveRecord; $('cancelRecord').onclick = () => { $('recordDialog').close(); recordDialogOpen = false; }; $('referenceButton').onclick=playReference; $('baseFrequency').oninput=e=>{baseHz=Number(e.target.value); $('baseFrequencyOut').textContent=`${baseHz} Hz`; updateTarget(); resetLive();};
 document.querySelector('.meter').style.background = 'linear-gradient(90deg,#f39b66,#f7d865 20%,#55b79a 32%,#55b79a 68%,#f7d865 80%,#f39b66)';
